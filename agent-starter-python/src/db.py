@@ -105,6 +105,21 @@ async def get_next_queued_candidate(requirement_id: str, job_role: str) -> dict 
     }
 
 
+async def get_call_mode(requirement_id: str) -> str:
+    """Return 'auto' or 'manual' for the requirement's call mode."""
+    if not requirement_id:
+        return "auto"
+    client = _client()
+    result = await asyncio.to_thread(
+        lambda: client.table("job_requirements")
+        .select("call_mode")
+        .eq("id", requirement_id)
+        .single()
+        .execute()
+    )
+    return (result.data or {}).get("call_mode", "auto")
+
+
 async def has_on_hold_candidates(requirement_id: str) -> bool:
     """Return True if there are any on_hold candidates for this requirement."""
     if not requirement_id:

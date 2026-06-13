@@ -45,6 +45,16 @@ class InterviewData:
 
 async def _dispatch_next(job_ctx: JobContext, requirement_id: str, job_role: str) -> None:
     """Pick the next queued candidate and dispatch a new agent for them."""
+    call_mode = await db.get_call_mode(requirement_id)
+    if call_mode == "manual":
+        await db.log_activity(
+            requirement_id,
+            "Call completed — waiting for HR to queue next candidate",
+            "info",
+        )
+        logger.info("Manual mode — not auto-dispatching for requirement %s", requirement_id)
+        return
+
     next_rc = await db.get_next_queued_candidate(requirement_id, job_role)
     if next_rc:
         room_name = f"hire-{next_rc['candidate_id'][:8]}-{int(time.time() * 1000)}"

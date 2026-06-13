@@ -13,6 +13,7 @@ type Requirement = {
   job_id: string | null;
   recruiter_name: string | null;
   created_at: string;
+  call_mode?: string | null;
 };
 
 type MatchedCandidate = {
@@ -71,10 +72,32 @@ function MatchScoreBadge({ score }: { score: number }) {
   );
 }
 
-function QueueStatusBadge({ rc, queuePos }: { rc: MatchedCandidate; queuePos?: number }) {
+// Only shows outcome AFTER the call is completed for THIS run
+function OutcomeBadge({ rc }: { rc: MatchedCandidate }) {
+  if (rc.call_status !== "completed") return null;
   const summary = rc.interview_summaries?.[0];
-  const assessment = summary?.assessment?.toLowerCase() || "";
+  if (!summary?.assessment) return null;
+  const a = summary.assessment.toLowerCase();
 
+  if (a.includes("shortlist") || a.includes("hold"))
+    return (
+      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border border-emerald-400 text-emerald-700 bg-emerald-50">
+        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+        </svg>
+        Interested
+      </span>
+    );
+  if (a.includes("reject"))
+    return (
+      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border border-slate-300 text-slate-500 bg-slate-50">
+        Not Interested
+      </span>
+    );
+  return null;
+}
+
+function CallStateBadge({ rc, queuePos }: { rc: MatchedCandidate; queuePos?: number }) {
   if (rc.call_status === "calling")
     return (
       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border border-sky-300 text-sky-700 bg-sky-50">
@@ -82,22 +105,7 @@ function QueueStatusBadge({ rc, queuePos }: { rc: MatchedCandidate; queuePos?: n
         Calling…
       </span>
     );
-
-  if (assessment.includes("shortlist"))
-    return (
-      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border border-emerald-400 text-emerald-700 bg-white">
-        Shortlisted
-      </span>
-    );
-
-  if (assessment.includes("reject"))
-    return (
-      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border border-rose-300 text-rose-600 bg-white">
-        Rejected
-      </span>
-    );
-
-  if (rc.call_status === "completed" || summary?.call_status === "completed")
+  if (rc.call_status === "completed")
     return (
       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border border-teal-300 text-teal-700 bg-white">
         Called
@@ -106,21 +114,18 @@ function QueueStatusBadge({ rc, queuePos }: { rc: MatchedCandidate; queuePos?: n
         </svg>
       </span>
     );
-
   if (rc.call_status === "voicemail")
     return (
       <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border border-amber-300 text-amber-700 bg-amber-50">
         Voicemail
       </span>
     );
-
   if (rc.call_status === "call_failed")
     return (
       <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border border-rose-200 text-rose-600 bg-rose-50">
         Failed
       </span>
     );
-
   if (rc.call_status === "queued" && queuePos !== undefined)
     return (
       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border border-indigo-200 text-indigo-600 bg-indigo-50">
@@ -128,14 +133,12 @@ function QueueStatusBadge({ rc, queuePos }: { rc: MatchedCandidate; queuePos?: n
         in queue
       </span>
     );
-
   if (rc.call_status === "on_hold")
     return (
       <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border border-slate-200 text-slate-400 bg-slate-50">
         On hold
       </span>
     );
-
   return (
     <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border border-slate-200 text-slate-400 bg-white">
       Queued
@@ -191,12 +194,17 @@ export default function ScoutLiveView({
   const [requirement, setRequirement] = useState(initialReq);
   const [candidates, setCandidates] = useState(initialCandidates);
   const [activities, setActivities] = useState(initialActivities);
+  // Pre-execute: which candidates to call
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(initialCandidates.map((c) => c.id))
   );
+  // Live view: which on_hold candidates HR has checked to queue
+  const [liveSelected, setLiveSelected] = useState<Set<string>>(new Set());
   const [executing, setExecuting] = useState(false);
-  const [justLaunched, setJustLaunched] = useState(false);
+  const [queuingBatch, setQueuingBatch] = useState(false);
   const [actionLoading, setActionLoading] = useState<Set<string>>(new Set());
+  const [modeLoading, setModeLoading] = useState(false);
+  const [justLaunched, setJustLaunched] = useState(false);
   const [time, setTime] = useState("");
   const supabase = createSupabaseClient();
 
@@ -245,6 +253,7 @@ export default function ScoutLiveView({
       .on("postgres_changes", { event: "*", schema: "public", table: "requirement_activity" }, loadData)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "interview_summaries" }, loadData)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "candidates" }, loadData)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "job_requirements" }, loadData)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [initialReq.id, loadData]);
@@ -271,29 +280,51 @@ export default function ScoutLiveView({
     }
   };
 
-  const handleQueueAction = async (rcId: string, action: "queue" | "hold" | "retry") => {
-    setActionLoading((prev) => new Set(prev).add(rcId));
+  const handleToggleMode = async () => {
+    const newMode = (requirement.call_mode ?? "auto") === "auto" ? "manual" : "auto";
+    setModeLoading(true);
     try {
-      const res = await fetch(
-        `/api/requirements/${requirement.id}/candidates/${rcId}`,
-        {
+      await fetch(`/api/requirements/${requirement.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ call_mode: newMode }),
+      });
+      setRequirement((r) => ({ ...r, call_mode: newMode }));
+    } finally {
+      setModeLoading(false);
+    }
+  };
+
+  const handleQueueBatch = async () => {
+    if (liveSelected.size === 0) return;
+    setQueuingBatch(true);
+    try {
+      const ids = Array.from(liveSelected);
+      for (const rcId of ids) {
+        await fetch(`/api/requirements/${requirement.id}/candidates/${rcId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action }),
-        }
-      );
-      if (!res.ok) {
-        const d = await res.json();
-        alert(d.error || "Action failed");
-        return;
+          body: JSON.stringify({ action: "queue" }),
+        });
       }
+      setLiveSelected(new Set());
       await loadData();
     } finally {
-      setActionLoading((prev) => {
-        const next = new Set(prev);
-        next.delete(rcId);
-        return next;
+      setQueuingBatch(false);
+    }
+  };
+
+  const handleSingleAction = async (rcId: string, action: "hold" | "retry") => {
+    setActionLoading((prev) => new Set(prev).add(rcId));
+    try {
+      await fetch(`/api/requirements/${requirement.id}/candidates/${rcId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
       });
+      await loadData();
+    } finally {
+      setActionLoading((prev) => { const n = new Set(prev); n.delete(rcId); return n; });
     }
   };
 
@@ -303,29 +334,30 @@ export default function ScoutLiveView({
     );
 
   const toggleOne = (id: string) =>
-    setSelected((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
+    setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const toggleLiveOne = (id: string) =>
+    setLiveSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const isPreExecute = requirement.status === "matched" || requirement.status === "matching";
   const isLive = !isPreExecute;
+  const callMode = requirement.call_mode ?? "auto";
 
-  // Compute queue positions (only for "queued" candidates, ordered by match_score desc)
   const queuedRcs = candidates.filter((c) => c.call_status === "queued");
+  const onHoldRcs = candidates.filter((c) => c.call_status === "on_hold");
   const queuePositionMap = new Map(queuedRcs.map((rc, i) => [rc.id, i + 1]));
 
   const total = candidates.length;
-  const called = candidates.filter((c) => c.interview_summaries?.[0] || c.call_status === "calling").length;
-  const shortlisted = candidates.filter((c) =>
-    c.interview_summaries?.[0]?.assessment?.toLowerCase().includes("shortlist")
+  const called = candidates.filter((c) =>
+    c.call_status === "calling" || c.call_status === "completed" || c.call_status === "voicemail" || c.call_status === "call_failed"
   ).length;
-  const interested = candidates.filter((c) => {
+  const shortlisted = candidates.filter((c) => {
+    if (c.call_status !== "completed") return false;
     const a = c.interview_summaries?.[0]?.assessment?.toLowerCase() || "";
     return a.includes("shortlist") || a.includes("hold");
   }).length;
-  const onHoldCount = candidates.filter((c) => c.call_status === "on_hold").length;
+  const interested = shortlisted;
+  const onHoldCount = onHoldRcs.length;
   const progress = total > 0 ? Math.round((called / total) * 100) : 0;
 
   return (
@@ -342,7 +374,6 @@ export default function ScoutLiveView({
       {/* ── PRE-EXECUTE: selection ── */}
       {isPreExecute && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-fade-up">
-
           {/* Header */}
           <div className="px-5 py-4 border-b border-slate-100">
             <div className="flex items-start justify-between gap-3">
@@ -411,9 +442,7 @@ export default function ScoutLiveView({
                   className={`flex items-center gap-3 px-5 py-3.5 cursor-pointer transition-colors select-none ${
                     selected.has(rc.id) ? "bg-indigo-50/50 hover:bg-indigo-50/70" : "hover:bg-slate-50/60"
                   }`}
-                  style={{ animationDelay: `${i * 40}ms` }}
                 >
-                  {/* Checkbox */}
                   <div className={`w-4 h-4 rounded border shrink-0 flex items-center justify-center transition-all ${
                     selected.has(rc.id) ? "bg-indigo-600 border-indigo-600" : "border-slate-300 bg-white"}`}>
                     {selected.has(rc.id) && (
@@ -422,23 +451,16 @@ export default function ScoutLiveView({
                       </svg>
                     )}
                   </div>
-
-                  {/* Rank */}
                   <span className="w-5 text-xs font-semibold text-slate-300 shrink-0 text-right">#{i + 1}</span>
-
-                  {/* Avatar */}
                   <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm font-semibold ${avatarColor(rc.candidates.name)}`}>
                     {rc.candidates.name.charAt(0).toUpperCase()}
                   </div>
-
-                  {/* Info */}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-slate-900 truncate">{rc.candidates.name}</p>
                     <p className="text-xs text-slate-400 truncate mt-0.5">
                       {[rc.candidates.job_role, rc.match_reason].filter(Boolean).join(" · ")}
                     </p>
                   </div>
-
                   <MatchScoreBadge score={rc.match_score} />
                 </div>
               ))
@@ -478,11 +500,6 @@ export default function ScoutLiveView({
               {selected.size === 0 && (
                 <p className="text-center text-xs text-slate-400 mt-2">Select at least one candidate to call</p>
               )}
-              {selected.size > 0 && selected.size < candidates.length && (
-                <p className="text-center text-xs text-slate-400 mt-2">
-                  Non-selected candidates will be on hold — you can queue them anytime during the run
-                </p>
-              )}
             </div>
           )}
         </div>
@@ -497,7 +514,7 @@ export default function ScoutLiveView({
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
               <div className="flex items-center gap-3 min-w-0">
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500 text-white shrink-0 animate-scale-in">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500 text-white shrink-0">
                   <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
                   SCOUT LIVE
                 </span>
@@ -516,14 +533,35 @@ export default function ScoutLiveView({
               <span className="text-xs text-slate-400 shrink-0 tabular-nums">{time}</span>
             </div>
 
-            {/* Hint bar when queue is paused */}
+            {/* Auto / Manual toggle */}
+            <div className="flex items-center justify-between px-5 py-2.5 border-b border-slate-100 bg-slate-50/60">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-slate-600">Call mode</span>
+                <span className={`text-xs font-semibold ${callMode === "auto" ? "text-indigo-600" : "text-amber-600"}`}>
+                  {callMode === "auto" ? "Automatic" : "Manual"}
+                </span>
+              </div>
+              <button
+                onClick={handleToggleMode}
+                disabled={modeLoading}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-600 disabled:opacity-50 transition-colors"
+              >
+                {/* Toggle pill */}
+                <div className={`relative w-8 h-4 rounded-full transition-colors ${callMode === "auto" ? "bg-indigo-500" : "bg-slate-300"}`}>
+                  <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${callMode === "auto" ? "translate-x-4" : "translate-x-0.5"}`} />
+                </div>
+                {callMode === "auto" ? "Switch to Manual" : "Switch to Auto"}
+              </button>
+            </div>
+
+            {/* Hint: queue paused */}
             {onHoldCount > 0 && queuedRcs.length === 0 && !candidates.some((c) => c.call_status === "calling") && (
               <div className="px-5 py-2.5 bg-amber-50 border-b border-amber-100 flex items-center gap-2">
                 <svg className="w-4 h-4 text-amber-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9.303 3.376c-.866 1.5.217 3.374 1.948 3.374H1.748c-1.73 0-2.813-1.874-1.948-3.374L10.051 3.378c.866-1.5 3.032-1.5 3.898 0l8.304 14.374zM12 15.75h.007v.008H12v-.008z" />
                 </svg>
                 <span className="text-xs text-amber-700 font-medium">
-                  Queue paused — {onHoldCount} candidate{onHoldCount > 1 ? "s" : ""} on hold. Click "+ Queue" to continue.
+                  Queue paused — check candidates below and click "Queue Selected" to continue
                 </span>
               </div>
             )}
@@ -534,21 +572,43 @@ export default function ScoutLiveView({
                 const summary = rc.interview_summaries?.[0];
                 const subtitle = [
                   rc.candidates.job_role,
-                  summary?.experience_years ? `${summary.experience_years}yr` : null,
-                  requirement.location,
+                  rc.call_status === "completed" && summary?.experience_years
+                    ? `${summary.experience_years}yr`
+                    : null,
                 ].filter(Boolean).join(" · ");
 
                 const isLoading = actionLoading.has(rc.id);
-                const canQueue = rc.call_status === "on_hold" || rc.call_status === "voicemail" || rc.call_status === "call_failed";
+                const isOnHold = rc.call_status === "on_hold";
+                const canRetry = rc.call_status === "voicemail" || rc.call_status === "call_failed";
                 const canHold = rc.call_status === "queued";
                 const isCalling = rc.call_status === "calling";
 
                 return (
                   <div
                     key={rc.id}
-                    className="flex items-center gap-3 px-5 py-3.5 animate-fade-up"
+                    className={`flex items-center gap-3 px-5 py-3.5 animate-fade-up ${isOnHold && liveSelected.has(rc.id) ? "bg-indigo-50/40" : ""}`}
                     style={{ animationDelay: `${i * 70}ms`, opacity: 0, animationFillMode: "forwards" }}
                   >
+                    {/* Checkbox (only on_hold candidates) */}
+                    <div className="w-5 shrink-0 flex items-center justify-center">
+                      {isOnHold ? (
+                        <div
+                          onClick={() => toggleLiveOne(rc.id)}
+                          className={`w-4 h-4 rounded border cursor-pointer flex items-center justify-center transition-all ${
+                            liveSelected.has(rc.id) ? "bg-indigo-600 border-indigo-600" : "border-slate-300 bg-white hover:border-indigo-400"
+                          }`}
+                        >
+                          {liveSelected.has(rc.id) && (
+                            <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                            </svg>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-xs font-semibold text-slate-200">#{i + 1}</span>
+                      )}
+                    </div>
+
                     {/* Avatar */}
                     <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm font-semibold ${avatarColor(rc.candidates.name)}`}>
                       {rc.candidates.name.charAt(0).toUpperCase()}
@@ -560,48 +620,39 @@ export default function ScoutLiveView({
                       {subtitle && <p className="text-xs text-slate-400 truncate mt-0.5">{subtitle}</p>}
                     </div>
 
-                    {/* Status badge */}
-                    <QueueStatusBadge rc={rc} queuePos={queuePositionMap.get(rc.id)} />
+                    {/* Outcome badge (only after completed call) */}
+                    <OutcomeBadge rc={rc} />
 
-                    {/* Action button */}
+                    {/* State badge */}
+                    <CallStateBadge rc={rc} queuePos={queuePositionMap.get(rc.id)} />
+
+                    {/* Action buttons */}
                     {!isCalling && (
-                      <div className="shrink-0 ml-1">
-                        {canQueue && (
-                          <button
-                            onClick={() => handleQueueAction(rc.id, rc.call_status === "on_hold" ? "queue" : "retry")}
-                            disabled={isLoading}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border border-indigo-200 text-indigo-600 bg-white hover:bg-indigo-50 disabled:opacity-40 transition-colors"
-                          >
-                            {isLoading ? (
-                              <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                              </svg>
-                            ) : (
-                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                              </svg>
-                            )}
-                            {rc.call_status === "on_hold" ? "Queue" : "Retry"}
-                          </button>
-                        )}
+                      <div className="shrink-0">
                         {canHold && (
                           <button
-                            onClick={() => handleQueueAction(rc.id, "hold")}
+                            onClick={() => handleSingleAction(rc.id, "hold")}
                             disabled={isLoading}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border border-slate-200 text-slate-500 bg-white hover:bg-slate-50 disabled:opacity-40 transition-colors"
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium border border-slate-200 text-slate-400 bg-white hover:bg-slate-50 disabled:opacity-40 transition-colors"
                           >
-                            {isLoading ? (
-                              <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                              </svg>
-                            ) : (
-                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25v13.5m-7.5-13.5v13.5" />
-                              </svg>
-                            )}
+                            {isLoading
+                              ? <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                              : <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25v13.5m-7.5-13.5v13.5" /></svg>
+                            }
                             Hold
+                          </button>
+                        )}
+                        {canRetry && (
+                          <button
+                            onClick={() => handleSingleAction(rc.id, "retry")}
+                            disabled={isLoading}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium border border-indigo-200 text-indigo-600 bg-white hover:bg-indigo-50 disabled:opacity-40 transition-colors"
+                          >
+                            {isLoading
+                              ? <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                              : <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
+                            }
+                            Retry
                           </button>
                         )}
                       </div>
@@ -611,9 +662,35 @@ export default function ScoutLiveView({
               })}
             </div>
 
+            {/* Queue selected footer — shows when HR has checked on_hold candidates */}
+            {liveSelected.size > 0 && (
+              <div className="px-5 py-3.5 border-t border-indigo-100 bg-indigo-50/60 flex items-center justify-between gap-3">
+                <span className="text-xs text-indigo-700 font-medium">
+                  {liveSelected.size} candidate{liveSelected.size > 1 ? "s" : ""} selected
+                </span>
+                <button
+                  onClick={handleQueueBatch}
+                  disabled={queuingBatch}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold disabled:opacity-50 transition-colors"
+                >
+                  {queuingBatch ? (
+                    <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" />
+                    </svg>
+                  )}
+                  Queue Selected ({liveSelected.size})
+                </button>
+              </div>
+            )}
+
             {/* Progress bar */}
             {total > 0 && (
-              <div className="px-5 py-4 border-t border-slate-100 animate-slide-down" style={{ animationDelay: "200ms", opacity: 0, animationFillMode: "forwards" }}>
+              <div className="px-5 py-4 border-t border-slate-100">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-bold text-slate-700">Outreach progress</span>
                   <span className="text-sm font-bold text-amber-500">{progress}%</span>
@@ -624,14 +701,11 @@ export default function ScoutLiveView({
                     style={{ width: `${progress}%`, background: "linear-gradient(90deg, #6366f1 0%, #f59e0b 100%)" }}
                   />
                 </div>
-                <div className="flex items-center gap-5 mt-2.5 text-xs text-slate-500 flex-wrap">
+                <div className="flex items-center gap-4 mt-2.5 text-xs text-slate-500 flex-wrap">
                   <span><strong className="text-slate-700">{called}</strong> called</span>
                   <span><strong className="text-slate-700">{queuedRcs.length}</strong> queued</span>
-                  {onHoldCount > 0 && (
-                    <span><strong className="text-slate-500">{onHoldCount}</strong> on hold</span>
-                  )}
-                  <span><strong className="text-slate-700">{interested}</strong> interested</span>
-                  <span><strong className="text-slate-700">{shortlisted}</strong> shortlisted</span>
+                  {onHoldCount > 0 && <span><strong className="text-slate-500">{onHoldCount}</strong> on hold</span>}
+                  <span><strong className="text-emerald-600">{interested}</strong> interested</span>
                 </div>
               </div>
             )}
@@ -639,7 +713,7 @@ export default function ScoutLiveView({
 
           {/* Activity log */}
           {activities.length > 0 && (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-fade-up" style={{ animationDelay: "300ms", opacity: 0, animationFillMode: "forwards" }}>
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
                 <span className="text-sm font-semibold text-slate-800">Scout activity log</span>
                 <span className="inline-flex items-center gap-1 text-xs text-emerald-600 font-medium">
@@ -649,11 +723,7 @@ export default function ScoutLiveView({
               </div>
               <div className="divide-y divide-slate-50">
                 {activities.map((act, i) => (
-                  <div
-                    key={act.id}
-                    className="flex items-start gap-3 px-5 py-3 animate-fade-up"
-                    style={{ animationDelay: `${350 + i * 60}ms`, opacity: 0, animationFillMode: "forwards" }}
-                  >
+                  <div key={act.id} className="flex items-start gap-3 px-5 py-3">
                     <ActivityIcon icon={act.icon} />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-slate-700">{act.message}</p>
