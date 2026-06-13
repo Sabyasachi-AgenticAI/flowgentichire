@@ -36,7 +36,7 @@ async function matchBatch(
       {
         role: "system",
         content: `You are a recruiter AI. Score each candidate 0–100 for the role. Be generous with partial matches.
-Return ONLY: {"matches":[{"candidate_id":"<id>","score":<int>,"reason":"<6-10 words>"}]}
+Return ONLY valid JSON: {"matches":[{"candidate_id":"<id>","score":<int>,"reason":"<6-10 words>"}]}
 Include ALL candidates. Score 0 if irrelevant.`,
       },
       {
