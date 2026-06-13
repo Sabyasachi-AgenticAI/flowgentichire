@@ -50,7 +50,7 @@ async def _dispatch_next(job_ctx: JobContext, requirement_id: str, job_role: str
         room_name = f"hire-{next_rc['candidate_id'][:8]}-{int(time.time() * 1000)}"
         await job_ctx.api.agent_dispatch.create_dispatch(
             api.CreateAgentDispatchRequest(
-                room_name=room_name,
+                room=room_name,
                 agent_name="flowgentic-hire",
                 metadata=json.dumps(next_rc),
             )
