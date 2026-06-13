@@ -14,6 +14,49 @@ interface MatchResult {
   reason: string;
 }
 
+const BATCH_SIZE = 20;
+
+async function matchBatch(
+  jobTitle: string,
+  jobDescription: string,
+  requiredSkills: string,
+  experienceLevel: string,
+  batch: any[]
+): Promise<MatchResult[]> {
+  const profiles = batch.map((c) => ({
+    id: c.id,
+    job_role: c.job_role ?? "",
+    skills: c.skills ?? "",
+    experience_years: c.experience_years ?? "",
+  }));
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      {
+        role: "system",
+        content: `You are a recruiter AI. Score each candidate 0–100 for the role. Be generous with partial matches.
+Return ONLY: {"matches":[{"candidate_id":"<id>","score":<int>,"reason":"<6-10 words>"}]}
+Include ALL candidates. Score 0 if irrelevant.`,
+      },
+      {
+        role: "user",
+        content: `ROLE: ${jobTitle} | Skills: ${requiredSkills} | Level: ${experienceLevel}
+JD: ${jobDescription?.slice(0, 400) ?? ""}
+
+CANDIDATES:
+${JSON.stringify(profiles)}`,
+      },
+    ],
+    response_format: { type: "json_object" },
+    temperature: 0.2,
+    max_tokens: 800,
+  });
+
+  const parsed = JSON.parse(response.choices[0].message.content ?? "{}");
+  return (parsed.matches ?? []) as MatchResult[];
+}
+
 async function matchWithOpenAI(
   jobTitle: string,
   jobDescription: string,
@@ -21,48 +64,19 @@ async function matchWithOpenAI(
   experienceLevel: string,
   candidates: any[]
 ): Promise<MatchResult[]> {
-  const candidateProfiles = candidates.map((c) => ({
-    id: c.id,
-    name: c.name,
-    job_role: c.job_role,
-    location: c.location ?? null,
-    current_position: c.current_position ?? null,
-    skills: c.skills ?? null,
-    experience_years: c.experience_years ?? null,
-  }));
+  // Split into batches and run all in parallel
+  const batches: any[][] = [];
+  for (let i = 0; i < candidates.length; i += BATCH_SIZE) {
+    batches.push(candidates.slice(i, i + BATCH_SIZE));
+  }
 
-  const systemPrompt = `You are a technical recruiter AI. Given a job requirement and a list of candidates, score each candidate from 0–100 based on how well they match the role. Be semantic and generous — partial skill matches, adjacent technologies, and transferable experience should earn partial credit.
+  const batchResults = await Promise.all(
+    batches.map((batch) =>
+      matchBatch(jobTitle, jobDescription, requiredSkills, experienceLevel, batch)
+    )
+  );
 
-Return ONLY valid JSON in this exact format:
-{
-  "matches": [
-    { "candidate_id": "<uuid>", "score": <0-100 integer>, "reason": "<concise 6-10 word reason>" }
-  ]
-}
-
-Include ALL candidates in the response. Score 0 for completely irrelevant candidates.`;
-
-  const userPrompt = `JOB REQUIREMENT:
-Title: ${jobTitle}
-Required Skills: ${requiredSkills}
-Experience Level: ${experienceLevel}
-Description: ${jobDescription?.slice(0, 800) ?? ""}
-
-CANDIDATES:
-${JSON.stringify(candidateProfiles, null, 2)}`;
-
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: { type: "json_object" },
-    temperature: 0.2,
-  });
-
-  const parsed = JSON.parse(response.choices[0].message.content ?? "{}");
-  return (parsed.matches ?? []) as MatchResult[];
+  return batchResults.flat();
 }
 
 // ---------------------------------------------------------------------------
