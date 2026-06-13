@@ -12,7 +12,7 @@
     "@supabase/supabase-js": "^2.43.0",
     "livekit-server-sdk": "^2.6.0",
     "mammoth": "^1.12.0",
-    "next": "14.2.5",
+    "next": "^14.2.29",
     "openai": "^4.52.0",
     "pdf-parse": "^2.4.5",
     "react": "^18.3.1",

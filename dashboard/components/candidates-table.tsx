@@ -124,9 +124,9 @@ export function CandidatesTable({
           className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
         >
           <option value="all">All assessments</option>
-          <option value="shortlist">Shortlist</option>
+          <option value="shortlist">Interested</option>
           <option value="hold">Hold</option>
-          <option value="reject">Reject</option>
+          <option value="reject">Not Interested</option>
         </select>
       </div>
 

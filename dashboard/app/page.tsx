@@ -19,9 +19,12 @@ export default async function Dashboard() {
       .order("match_score", { ascending: false }),
     serverSupabase
       .from("job_requirements")
-      .select("id, title, location, status")
+      .select(`
+        id, title, location, status, job_id, created_at,
+        requirement_candidates(id, call_status, interview_summaries(assessment))
+      `)
       .order("created_at", { ascending: false })
-      .limit(6),
+      .limit(12),
   ]);
 
   const candidates = (data ?? []) as CandidateWithSummary[];
@@ -37,7 +40,7 @@ export default async function Dashboard() {
     <MainTabs
       candidates={candidates}
       matchScores={matchScores}
-      requirements={requirements ?? []}
+      requirements={(requirements ?? []) as any[]}
     />
   );
 }
