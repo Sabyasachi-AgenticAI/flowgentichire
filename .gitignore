@@ -1,0 +1,26 @@
+# Secrets — never commit real env files
+.env
+.env.*
+!.env.example
+
+# Next.js
+dashboard/.next/
+dashboard/node_modules/
+dashboard/.vercel/
+dashboard/out/
+
+# Python
+agent-starter-python/.venv/
+agent-starter-python/__pycache__/
+agent-starter-python/.pytest_cache/
+agent-starter-python/.ruff_cache/
+agent-starter-python/*.egg-info/
+agent-starter-python/src/__pycache__/
+
+# Claude Code
+.claude/settings.local.json
+.claude/worktrees/
+
+# OS
+.DS_Store
+Thumbs.db

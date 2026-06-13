@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "PowerShell(Get-ChildItem \"D:\\\\VoiceAI\\\\github_livekit\\\\FlowgenticHIRE\" -ErrorAction SilentlyContinue; if \\(-not \\(Test-Path \"D:\\\\VoiceAI\\\\github_livekit\\\\FlowgenticHIRE\"\\)\\) { Write-Host \"Directory does not exist\" } else { Write-Host \"Directory exists\" })"
-    ]
-  }
-}
