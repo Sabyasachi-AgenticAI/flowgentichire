@@ -24,3 +24,6 @@ agent-starter-python/src/__pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+.vercel
+.env*
