@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { AccessToken } from "livekit-server-sdk";
+import { AgentDispatchClient } from "livekit-server-sdk";
 
 export function createServerSupabase() {
   return createClient(
@@ -19,34 +19,16 @@ export async function dispatchAgent(candidate: {
 }): Promise<string> {
   const roomName = `hire-${candidate.candidate_id.slice(0, 8)}-${Date.now()}`;
 
-  const at = new AccessToken(
+  const host = process.env.LIVEKIT_URL!.replace("wss://", "https://");
+  const client = new AgentDispatchClient(
+    host,
     process.env.LIVEKIT_API_KEY!,
     process.env.LIVEKIT_API_SECRET!
   );
-  at.addGrant({ roomAdmin: true, room: roomName });
-  const token = await at.toJwt();
 
-  const host = process.env.LIVEKIT_URL!.replace("wss://", "https://");
-  const res = await fetch(
-    `${host}/twirp/livekit.AgentDispatch/CreateDispatch`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        agent_name: "flowgentic-hire",
-        room: roomName,
-        metadata: JSON.stringify(candidate),
-      }),
-    }
-  );
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`LiveKit dispatch failed: ${err}`);
-  }
+  await client.createDispatch(roomName, "flowgentic-hire", {
+    metadata: JSON.stringify(candidate),
+  });
 
   return roomName;
 }
