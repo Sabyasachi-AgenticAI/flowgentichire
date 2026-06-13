@@ -105,6 +105,22 @@ async def get_next_queued_candidate(requirement_id: str, job_role: str) -> dict 
     }
 
 
+async def has_on_hold_candidates(requirement_id: str) -> bool:
+    """Return True if there are any on_hold candidates for this requirement."""
+    if not requirement_id:
+        return False
+    client = _client()
+    result = await asyncio.to_thread(
+        lambda: client.table("requirement_candidates")
+        .select("id")
+        .eq("requirement_id", requirement_id)
+        .eq("call_status", "on_hold")
+        .limit(1)
+        .execute()
+    )
+    return len(result.data) > 0
+
+
 async def mark_requirement_complete(requirement_id: str) -> None:
     if not requirement_id:
         return

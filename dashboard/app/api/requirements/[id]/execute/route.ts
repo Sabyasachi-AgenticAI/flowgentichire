@@ -26,22 +26,37 @@ export async function POST(
     return NextResponse.json({ error: "Requirement not found" }, { status: 404 });
   }
 
-  // Fetch selected (or all queued) candidates, sorted by match_score descending
-  let query = supabase
+  // Fetch ALL queued candidates sorted by match_score
+  const { data: allQueued } = await supabase
     .from("requirement_candidates")
     .select("*, candidates(*)")
     .eq("requirement_id", requirementId)
     .eq("call_status", "queued")
     .order("match_score", { ascending: false });
 
-  if (selectedIds.length > 0) {
-    query = query.in("id", selectedIds);
+  if (!allQueued || allQueued.length === 0) {
+    return NextResponse.json({ error: "No candidates to call" }, { status: 400 });
   }
 
-  const { data: reqCandidates } = await query;
+  // Separate selected from non-selected
+  let toDispatch = allQueued;
+  let toHold: string[] = [];
 
-  if (!reqCandidates || reqCandidates.length === 0) {
-    return NextResponse.json({ error: "No candidates to call" }, { status: 400 });
+  if (selectedIds.length > 0) {
+    toHold = allQueued.filter((rc) => !selectedIds.includes(rc.id)).map((rc) => rc.id);
+    toDispatch = allQueued.filter((rc) => selectedIds.includes(rc.id));
+  }
+
+  if (toDispatch.length === 0) {
+    return NextResponse.json({ error: "Selected candidates are not queued" }, { status: 400 });
+  }
+
+  // Move non-selected to on_hold so they won't be auto-called
+  if (toHold.length > 0) {
+    await supabase
+      .from("requirement_candidates")
+      .update({ call_status: "on_hold" })
+      .in("id", toHold);
   }
 
   await supabase
@@ -49,9 +64,9 @@ export async function POST(
     .update({ status: "executing" })
     .eq("id", requirementId);
 
-  // Sequential: dispatch only the first (highest match) candidate.
-  // The agent will dispatch the next one when each call concludes.
-  const first = reqCandidates[0];
+  // Dispatch only the first (highest match) selected candidate.
+  // The agent chains to the next "queued" one when each call ends.
+  const first = toDispatch[0];
   const candidate = first.candidates as any;
 
   try {
@@ -77,7 +92,7 @@ export async function POST(
 
     await supabase.from("requirement_activity").insert({
       requirement_id: requirementId,
-      message: `Starting sequential calls — ${reqCandidates.length} candidate${reqCandidates.length > 1 ? "s" : ""} queued`,
+      message: `Starting calls — ${toDispatch.length} selected, ${toHold.length} on hold`,
       icon: "info",
     });
 
@@ -95,5 +110,5 @@ export async function POST(
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 
-  return NextResponse.json({ dispatched: 1, total: reqCandidates.length });
+  return NextResponse.json({ dispatched: 1, queued: toDispatch.length, on_hold: toHold.length });
 }

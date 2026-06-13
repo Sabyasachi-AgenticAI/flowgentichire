@@ -66,13 +66,21 @@ async def _dispatch_next(job_ctx: JobContext, requirement_id: str, job_role: str
         )
         logger.info("Dispatched next call → %s", next_rc["name"])
     else:
-        await db.mark_requirement_complete(requirement_id)
-        await db.log_activity(
-            requirement_id,
-            "All candidate calls completed",
-            "success",
-        )
-        logger.info("Queue exhausted — requirement %s completed", requirement_id)
+        if await db.has_on_hold_candidates(requirement_id):
+            await db.log_activity(
+                requirement_id,
+                "Queue paused — HR needs to add next candidate",
+                "info",
+            )
+            logger.info("Queue paused — on_hold candidates exist for %s", requirement_id)
+        else:
+            await db.mark_requirement_complete(requirement_id)
+            await db.log_activity(
+                requirement_id,
+                "All candidate calls completed",
+                "success",
+            )
+            logger.info("Queue exhausted — requirement %s completed", requirement_id)
 
 
 class HireAgent(Agent):
