@@ -50,10 +50,13 @@ ${JSON.stringify(profiles)}`,
     ],
     response_format: { type: "json_object" },
     temperature: 0.2,
-    max_tokens: 800,
   });
 
-  const parsed = JSON.parse(response.choices[0].message.content ?? "{}");
+  const raw = response.choices[0].message.content ?? "{}";
+  if (response.choices[0].finish_reason === "length") {
+    console.warn("matchBatch: response truncated — increase batch size or model context");
+  }
+  const parsed = JSON.parse(raw);
   return (parsed.matches ?? []) as MatchResult[];
 }
 
