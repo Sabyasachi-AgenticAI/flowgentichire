@@ -37,7 +37,12 @@ def _supabase():
 
 
 def _fetch(job_role: str, status: str) -> list[dict]:
-    q = _supabase().table("interview_summaries").select("*").order("called_at", desc=True)
+    q = (
+        _supabase()
+        .table("interview_summaries")
+        .select("*")
+        .order("called_at", desc=True)
+    )
     if job_role:
         q = q.ilike("job_role", f"%{job_role}%")
     if status != "All":
@@ -66,13 +71,16 @@ candidates = _fetch(job_role_filter, status_filter)
 
 if assessment_filter != "All":
     candidates = [
-        c for c in candidates
+        c
+        for c in candidates
         if assessment_filter.lower() in (c.get("assessment") or "").lower()
     ]
 
 # ── Metrics ──────────────────────────────────────────────────────────────────
 total = len(candidates)
-shortlisted = sum(1 for c in candidates if "shortlist" in (c.get("assessment") or "").lower())
+shortlisted = sum(
+    1 for c in candidates if "shortlist" in (c.get("assessment") or "").lower()
+)
 voicemail = sum(1 for c in candidates if c.get("status") == "voicemail")
 failed = sum(1 for c in candidates if c.get("status") == "call_failed")
 
@@ -91,8 +99,10 @@ else:
     for c in candidates:
         assessment = (c.get("assessment") or "").strip()
         badge = (
-            "🟢" if "shortlist" in assessment.lower()
-            else "🔴" if "reject" in assessment.lower()
+            "🟢"
+            if "shortlist" in assessment.lower()
+            else "🔴"
+            if "reject" in assessment.lower()
             else "🟡"
         )
         date = (c.get("called_at") or "")[:10]

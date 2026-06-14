@@ -9,8 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from dotenv import load_dotenv
-
-from livekit import rtc, api
+from livekit import api, rtc
 from livekit.agents import (
     Agent,
     AgentSession,
@@ -46,7 +45,9 @@ class InterviewData:
     job_role: str = ""
 
 
-async def _dispatch_next(job_ctx: JobContext, requirement_id: str, job_role: str) -> None:
+async def _dispatch_next(
+    job_ctx: JobContext, requirement_id: str, job_role: str
+) -> None:
     """Pick the next queued candidate and dispatch a new agent for them."""
     call_mode = await db.get_call_mode(requirement_id)
     if call_mode == "manual":
@@ -55,7 +56,9 @@ async def _dispatch_next(job_ctx: JobContext, requirement_id: str, job_role: str
             "Call completed — waiting for HR to queue next candidate",
             "info",
         )
-        logger.info("Manual mode — not auto-dispatching for requirement %s", requirement_id)
+        logger.info(
+            "Manual mode — not auto-dispatching for requirement %s", requirement_id
+        )
         return
 
     next_rc = await db.get_next_queued_candidate(requirement_id, job_role)
@@ -85,7 +88,9 @@ async def _dispatch_next(job_ctx: JobContext, requirement_id: str, job_role: str
                 "Queue paused — HR needs to add next candidate",
                 "info",
             )
-            logger.info("Queue paused — on_hold candidates exist for %s", requirement_id)
+            logger.info(
+                "Queue paused — on_hold candidates exist for %s", requirement_id
+            )
         else:
             await db.mark_requirement_complete(requirement_id)
             await db.log_activity(

@@ -28,9 +28,9 @@ load_dotenv(".env.local")
 logger = logging.getLogger("flowgentic-hire.caller")
 
 AGENT_NAME = "flowgentic-hire"
-DELAY_BETWEEN_CALLS = 30   # seconds between successive calls
-CALL_TIMEOUT = 900          # max seconds to wait per call (15 min)
-POLL_INTERVAL = 15          # seconds between room-status polls
+DELAY_BETWEEN_CALLS = 30  # seconds between successive calls
+CALL_TIMEOUT = 900  # max seconds to wait per call (15 min)
+POLL_INTERVAL = 15  # seconds between room-status polls
 
 
 async def _dispatch(lkapi: api.LiveKitAPI, candidate: dict, room_name: str) -> None:
@@ -91,7 +91,10 @@ async def main() -> None:
             room_name = f"hire-{row['id'][:8]}-{int(time.time())}"
             logger.info(
                 "[%d/%d] Calling %s (%s)",
-                i + 1, len(candidates), row["name"], row["phone"],
+                i + 1,
+                len(candidates),
+                row["name"],
+                row["phone"],
             )
 
             await db.update_candidate_status(row["id"], "calling")

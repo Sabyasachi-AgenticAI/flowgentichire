@@ -7,10 +7,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import time
 from datetime import datetime, timezone
 
-from supabase import create_client, Client
+from supabase import Client, create_client
 
 logger = logging.getLogger("flowgentic-hire.db")
 
@@ -25,11 +24,13 @@ def _client() -> Client:
 async def get_pending_candidates() -> list[dict]:
     client = _client()
     result = await asyncio.to_thread(
-        lambda: client.table("candidates")
-        .select("*")
-        .eq("status", "pending")
-        .order("created_at")
-        .execute()
+        lambda: (
+            client.table("candidates")
+            .select("*")
+            .eq("status", "pending")
+            .order("created_at")
+            .execute()
+        )
     )
     return result.data
 
@@ -39,10 +40,14 @@ async def update_candidate_status(candidate_id: str, status: str) -> None:
         return
     client = _client()
     await asyncio.to_thread(
-        lambda: client.table("candidates")
-        .update({"status": status, "called_at": datetime.now(timezone.utc).isoformat()})
-        .eq("id", candidate_id)
-        .execute()
+        lambda: (
+            client.table("candidates")
+            .update(
+                {"status": status, "called_at": datetime.now(timezone.utc).isoformat()}
+            )
+            .eq("id", candidate_id)
+            .execute()
+        )
     )
     logger.info("Candidate %s → %s", candidate_id, status)
 
@@ -68,10 +73,12 @@ async def update_requirement_candidate_status(rc_id: str, status: str) -> None:
         payload["called_at"] = datetime.now(timezone.utc).isoformat()
     client = _client()
     await asyncio.to_thread(
-        lambda: client.table("requirement_candidates")
-        .update(payload)
-        .eq("id", rc_id)
-        .execute()
+        lambda: (
+            client.table("requirement_candidates")
+            .update(payload)
+            .eq("id", rc_id)
+            .execute()
+        )
     )
     logger.info("requirement_candidates %s → %s", rc_id, status)
 
@@ -82,13 +89,15 @@ async def get_next_queued_candidate(requirement_id: str, job_role: str) -> dict 
         return None
     client = _client()
     result = await asyncio.to_thread(
-        lambda: client.table("requirement_candidates")
-        .select("id, candidate_id, match_score, candidates(id, name, phone, email)")
-        .eq("requirement_id", requirement_id)
-        .eq("call_status", "queued")
-        .order("match_score", desc=True)
-        .limit(1)
-        .execute()
+        lambda: (
+            client.table("requirement_candidates")
+            .select("id, candidate_id, match_score, candidates(id, name, phone, email)")
+            .eq("requirement_id", requirement_id)
+            .eq("call_status", "queued")
+            .order("match_score", desc=True)
+            .limit(1)
+            .execute()
+        )
     )
     if not result.data:
         return None
@@ -111,11 +120,13 @@ async def get_call_mode(requirement_id: str) -> str:
         return "auto"
     client = _client()
     result = await asyncio.to_thread(
-        lambda: client.table("job_requirements")
-        .select("call_mode")
-        .eq("id", requirement_id)
-        .single()
-        .execute()
+        lambda: (
+            client.table("job_requirements")
+            .select("call_mode")
+            .eq("id", requirement_id)
+            .single()
+            .execute()
+        )
     )
     return (result.data or {}).get("call_mode", "auto")
 
@@ -126,12 +137,14 @@ async def has_on_hold_candidates(requirement_id: str) -> bool:
         return False
     client = _client()
     result = await asyncio.to_thread(
-        lambda: client.table("requirement_candidates")
-        .select("id")
-        .eq("requirement_id", requirement_id)
-        .eq("call_status", "on_hold")
-        .limit(1)
-        .execute()
+        lambda: (
+            client.table("requirement_candidates")
+            .select("id")
+            .eq("requirement_id", requirement_id)
+            .eq("call_status", "on_hold")
+            .limit(1)
+            .execute()
+        )
     )
     return len(result.data) > 0
 
@@ -141,10 +154,12 @@ async def mark_requirement_complete(requirement_id: str) -> None:
         return
     client = _client()
     await asyncio.to_thread(
-        lambda: client.table("job_requirements")
-        .update({"status": "completed"})
-        .eq("id", requirement_id)
-        .execute()
+        lambda: (
+            client.table("job_requirements")
+            .update({"status": "completed"})
+            .eq("id", requirement_id)
+            .execute()
+        )
     )
     logger.info("Requirement %s → completed", requirement_id)
 
@@ -154,7 +169,11 @@ async def log_activity(requirement_id: str, message: str, icon: str = "info") ->
         return
     client = _client()
     await asyncio.to_thread(
-        lambda: client.table("requirement_activity")
-        .insert({"requirement_id": requirement_id, "message": message, "icon": icon})
-        .execute()
+        lambda: (
+            client.table("requirement_activity")
+            .insert(
+                {"requirement_id": requirement_id, "message": message, "icon": icon}
+            )
+            .execute()
+        )
     )
