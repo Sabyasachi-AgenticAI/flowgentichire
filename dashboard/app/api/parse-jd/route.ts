@@ -45,6 +45,7 @@ export async function POST(req: NextRequest) {
           content: `Extract job requirement fields from the JD text provided.
 Return ONLY valid JSON with these fields:
 {
+  "company": "hiring company name (empty string if not mentioned or confidential)",
   "title": "concise job title (e.g. Senior DevOps Engineer)",
   "location": "city name, or Remote, or Hybrid (leave empty string if not mentioned)",
   "description": "2-3 sentence summary of the role and responsibilities",

@@ -7,6 +7,7 @@ import ScoutLiveView from "@/components/scout-live-view";
 
 type JDFormData = {
   recruiter_name: string;
+  company: string;
   title: string;
   location: string;
   description: string;
@@ -156,6 +157,7 @@ export function RequirementForm({ embedded = false }: { embedded?: boolean }) {
 
   const [form, setForm] = useState<JDFormData>({
     recruiter_name: "",
+    company: "",
     title: "",
     location: "",
     description: "",
@@ -291,6 +293,16 @@ export function RequirementForm({ embedded = false }: { embedded?: boolean }) {
                   value={form.title}
                   onChange={set("title")}
                   placeholder="e.g. Senior DevOps Engineer"
+                  className={inputCls}
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <FieldLabel label="Company" />
+                <input
+                  value={form.company}
+                  onChange={set("company")}
+                  placeholder="e.g. Acme Corp  (leave blank to keep confidential)"
                   className={inputCls}
                 />
               </div>

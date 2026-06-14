@@ -80,6 +80,11 @@ export async function PATCH(
         phone: candidate.phone,
         email: candidate.email || "",
         job_role: requirement.title,
+        company: requirement.company || "",
+        location: requirement.location || "",
+        description: requirement.description || "",
+        required_skills: requirement.skills || "",
+        experience_level: requirement.experience || "",
       });
 
       await supabase

@@ -16,6 +16,11 @@ export async function dispatchAgent(candidate: {
   phone: string;
   email: string;
   job_role: string;
+  company: string;
+  location: string;
+  description: string;
+  required_skills: string;
+  experience_level: string;
 }): Promise<string> {
   const roomName = `hire-${candidate.candidate_id.slice(0, 8)}-${Date.now()}`;
 

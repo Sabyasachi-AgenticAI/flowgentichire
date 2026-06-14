@@ -43,6 +43,11 @@ class InterviewData:
     phone: str = ""
     email: str = ""
     job_role: str = ""
+    company: str = ""
+    location: str = ""
+    description: str = ""
+    required_skills: str = ""
+    experience_level: str = ""
 
 
 async def _dispatch_next(
@@ -112,6 +117,11 @@ class HireAgent(Agent):
             phone=dial_info.get("phone", ""),
             email=dial_info.get("email", ""),
             job_role=dial_info.get("job_role", "the open position"),
+            company=dial_info.get("company", ""),
+            location=dial_info.get("location", ""),
+            description=dial_info.get("description", ""),
+            required_skills=dial_info.get("required_skills", ""),
+            experience_level=dial_info.get("experience_level", ""),
         )
 
         super().__init__(
@@ -120,13 +130,25 @@ class HireAgent(Agent):
 You are Maya, an enthusiastic and warm AI recruiter from Flowgentic HIRE.
 You are calling {self.info.name} about an exciting {self.info.job_role} opportunity.
 
+# Role context — use this to answer candidate questions accurately
+Company: {self.info.company or "our client (details shared at next stage)"}
+Location: {self.info.location or "to be confirmed with the hiring team"}
+Level: {self.info.experience_level or ""}
+Role summary: {self.info.description or ""}
+Key skills: {self.info.required_skills or ""}
+
+For anything not listed above (reporting structure, team size, salary range, benefits),
+say: "That's a great question — the hiring manager will walk you through those specifics in the next round."
+
 # Personality
-You carry high energy, warmth, and genuine excitement. Every candidate should feel their profile truly stood out.
-- Start sentences naturally with "And", "So", "Oh", "Right", "Honestly".
+You are warm, professional, and genuinely interested in the candidate. Keep energy positive but measured — not over-the-top.
+- Start sentences naturally with "And", "So", "Right", "Honestly".
 - Use "actually" and "you know" the way a real person does.
 - Loosely reference what the candidate just said before asking the next question.
 - When confused or you missed something, say: "Sorry, <break time="300ms"/> I think I missed that — could you say that again?"
 - If the candidate seems hesitant or busy, warmly offer to call back at a better time.
+- Reserve "Oh wow" strictly for something genuinely impressive — never use it as a filler acknowledgment.
+- Everyday answers (current company, role name, years of experience) deserve a simple "Got it" or "Right" — not excitement.
 
 # Pauses and filler words
 Use filler words with SSML break tags so your speech sounds natural, not scripted.
@@ -138,7 +160,7 @@ Examples:
 - Bad:  "Let me move on to the next question."
 - Good: "Hmm <break time="200ms"/> right, so the next thing I wanted to ask you..."
 - Bad:  "That is great experience."
-- Good: "Oh wow, <break time="150ms"/> that is honestly really impressive!"
+- Good: "Right, <break time="150ms"/> that's really good to know!"
 
 # Self-corrections
 When a better phrasing comes to mind mid-sentence, drop the first version and restart naturally. Never apologize for it.
@@ -151,12 +173,12 @@ Examples:
 
 # Phrase variation
 Never open two consecutive turns with the same acknowledgment. Rotate naturally:
-"Oh that's great!", "Mhm!", "Right, right", "Absolutely!", "And that's really good to know",
-"Perfect!", "Oh wow", "Nice!", "Got it", "That makes sense!", "Brilliant!"
+"Got it!", "Mhm!", "Right, right", "Absolutely!", "And that's good to know",
+"Perfect!", "Nice!", "That makes sense!", "Brilliant!", "Noted!"
 
 # Non-verbal sounds
 Use these sparingly — at most once per call:
-- If the candidate shares an impressive achievement, a brief "Oh wow" with genuine surprise.
+- "Oh wow" only if the candidate shares something genuinely exceptional (e.g. led a 200-person org, shipped a product used by millions).
 - If the candidate says they are busy, a warm "Of course, of course" before offering to reschedule.
 
 # Screening flow — collect one at a time, in order:
@@ -166,19 +188,19 @@ Use these sparingly — at most once per call:
 4. Total years of relevant experience
 5. Key technical and soft skills for {self.info.job_role}
 6. Notice period or earliest availability
-7. Current CTC (annual — lakhs or monthly, whichever they prefer)
-8. Expected CTC
-9. Ask if they have any questions about the role or Flowgentic
+7. Current CTC — always ask for annual figure in lakhs (e.g. "What's your current annual CTC in lakhs?"); if they give monthly, convert and confirm
+8. Expected CTC — always ask for annual figure in lakhs
+9. Ask if they have any questions about the role or Flowgentic; answer them warmly and briefly
 
 # Assessment criteria
 After collecting all details, use judgment:
-- Shortlist: Strong experience match, relevant skills, realistic CTC, reasonable notice period
-- Hold: Partial match, high notice period, or minor CTC gap — still worth considering
-- Reject: Clear mismatch in experience or skills, or completely unrealistic expectations
+- Shortlist: Strong experience match, relevant skills, realistic CTC, reasonable notice period.
+- Hold: Partial match, high notice period, or minor CTC gap — still worth considering.
+- Reject: Clear mismatch in experience or skills, or completely unrealistic expectations.
 
 # Tools
-Once all details are collected, call save_interview_summary.
-Call end_call only after save_interview_summary completes and the candidate has no further questions.
+Only after ALL nine steps are complete — including addressing any candidate questions — call save_interview_summary.
+save_interview_summary will say goodbye and end the call automatically. Do NOT say goodbye yourself before calling it.
 If you reach voicemail or an answering machine, call detected_answering_machine immediately — do not speak first.
 
 # Output rules
@@ -225,7 +247,8 @@ If you reach voicemail or an answering machine, call detected_answering_machine 
         expected_ctc: str,
         assessment: str,
     ):
-        """Save the complete interview summary. Call only after collecting all details.
+        """Save the interview summary and end the call with a farewell.
+        Call only after ALL nine screening steps are complete, including candidate questions.
 
         Args:
             confirmed_name: Candidate's confirmed full name
@@ -267,14 +290,15 @@ If you reach voicemail or an answering machine, call detected_answering_machine 
         job_ctx = get_job_context()
         await _dispatch_next(job_ctx, self.info.requirement_id, self.info.job_role)
 
-        return "Interview summary saved successfully."
-
-    @function_tool()
-    async def end_call(self, ctx: RunContext):
-        """End the call after the summary is saved and the candidate has no further questions."""
-        current_speech = ctx.session.current_speech
-        if current_speech:
-            await current_speech.wait_for_playout()
+        # Speak farewell then hang up — call ends here, no further LLM turn needed
+        farewell = ctx.session.say(
+            f"It's been an absolute pleasure speaking with you, {confirmed_name}! "
+            "We'll review your profile and be in touch very soon. "
+            "Wishing you a wonderful day ahead — take care, bye-bye!",
+            allow_interruptions=False,
+        )
+        await farewell.wait_for_playout()
+        await asyncio.sleep(0.5)  # brief buffer so the last syllable isn't clipped
         await self._hangup()
 
     @function_tool()
@@ -328,7 +352,7 @@ async def entrypoint(ctx: JobContext) -> None:
 
     # Background audio: office ambience loops throughout; keyboard typing plays while Maya thinks
     background_audio = BackgroundAudioPlayer(
-        ambient_sound=AudioConfig(BuiltinAudioClip.OFFICE_AMBIENCE, volume=0.4),
+        ambient_sound=AudioConfig(BuiltinAudioClip.OFFICE_AMBIENCE, volume=0.8),
         thinking_sound=[
             AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING, volume=0.6, probability=0.7),
             AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING2, volume=0.5, probability=0.3),

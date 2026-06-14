@@ -96,7 +96,7 @@ async function generateJobId(supabase: ReturnType<typeof createServerSupabase>):
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { title, location, description, required_skills, experience_level, recruiter_name } = body;
+    const { title, location, description, required_skills, experience_level, recruiter_name, company } = body;
 
     const supabase = createServerSupabase();
 
@@ -109,6 +109,7 @@ export async function POST(req: NextRequest) {
         title,
         location,
         description,
+        company: company || null,
         skills: required_skills,
         experience: experience_level,
         recruiter_name: recruiter_name || "Recruiter",
