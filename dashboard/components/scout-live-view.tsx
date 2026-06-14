@@ -264,6 +264,15 @@ export default function ScoutLiveView({
     return () => { supabase.removeChannel(ch); };
   }, [initialReq.id, loadData]);
 
+  // Polling fallback — fires every 4 s while the requirement is live/executing.
+  // Keeps the dashboard in sync even if Supabase Realtime publication isn't enabled yet.
+  useEffect(() => {
+    const live = requirement.status !== "matched" && requirement.status !== "matching";
+    if (!live) return;
+    const poll = setInterval(loadData, 4000);
+    return () => clearInterval(poll);
+  }, [requirement.status, loadData]);
+
   const handleExecute = async () => {
     if (selected.size === 0) return;
     setExecuting(true);
