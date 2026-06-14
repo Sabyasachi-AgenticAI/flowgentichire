@@ -29,6 +29,7 @@ from livekit.plugins import ai_coustics, silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 import db
+import email_service
 
 load_dotenv(".env.local")
 logger = logging.getLogger("flowgentic-hire")
@@ -106,9 +107,49 @@ async def _dispatch_next(
             logger.info("Queue exhausted — requirement %s completed", requirement_id)
 
 
+async def _handle_early_disconnect(agent: HireAgent, job_ctx: JobContext) -> None:
+    """Called when the SIP participant disconnects before the interview was completed."""
+    if agent._call_completed:
+        return  # save_interview_summary or detected_answering_machine already ran
+    agent._call_completed = True
+    logger.warning("Early disconnect for %s — marking incomplete", agent.info.name)
+
+    await db.save_interview_result(
+        {
+            "candidate_id": agent.info.candidate_id,
+            "confirmed_name": agent.info.name,
+            "email": agent.info.email,
+            "call_status": "incomplete",
+            "assessment": "Call dropped — candidate disconnected mid-interview",
+        }
+    )
+    await db.update_candidate_status(agent.info.candidate_id, "done")
+    await db.update_requirement_candidate_status(
+        agent.info.requirement_candidate_id, "incomplete"
+    )
+    await db.log_activity(
+        agent.info.requirement_id,
+        f"{agent.info.name} — call dropped mid-interview",
+        "error",
+    )
+    await email_service.send_missed_call_email(
+        name=agent.info.name,
+        email=agent.info.email,
+        job_role=agent.info.job_role,
+        company=agent.info.company,
+        location=agent.info.location,
+        experience_level=agent.info.experience_level,
+        required_skills=agent.info.required_skills,
+        description=agent.info.description,
+    )
+    await _dispatch_next(job_ctx, agent.info.requirement_id, agent.info.job_role)
+    await agent._hangup()
+
+
 class HireAgent(Agent):
     def __init__(self, *, dial_info: dict[str, Any]) -> None:
         self.participant: rtc.RemoteParticipant | None = None
+        self._call_completed: bool = False
         self.info = InterviewData(
             candidate_id=dial_info.get("candidate_id", ""),
             requirement_candidate_id=dial_info.get("requirement_candidate_id", ""),
@@ -261,6 +302,7 @@ If you reach voicemail or an answering machine, call detected_answering_machine 
             expected_ctc: Expected annual CTC or monthly salary
             assessment: Shortlist / Hold / Reject — with one sentence reason
         """
+        self._call_completed = True  # prevent disconnect handler from double-processing
         await db.save_interview_result(
             {
                 "candidate_id": self.info.candidate_id,
@@ -290,6 +332,18 @@ If you reach voicemail or an answering machine, call detected_answering_machine 
         job_ctx = get_job_context()
         await _dispatch_next(job_ctx, self.info.requirement_id, self.info.job_role)
 
+        # Send JD summary email to candidate
+        await email_service.send_post_call_email(
+            name=confirmed_name,
+            email=confirmed_email or self.info.email,
+            job_role=self.info.job_role,
+            company=self.info.company,
+            location=self.info.location,
+            experience_level=self.info.experience_level,
+            required_skills=self.info.required_skills,
+            description=self.info.description,
+        )
+
         # Speak farewell then hang up — call ends here, no further LLM turn needed
         farewell = ctx.session.say(
             f"It's been an absolute pleasure speaking with you, {confirmed_name}! "
@@ -304,6 +358,7 @@ If you reach voicemail or an answering machine, call detected_answering_machine 
     @function_tool()
     async def detected_answering_machine(self, ctx: RunContext):
         """Call this immediately when the call reaches voicemail or an answering machine."""
+        self._call_completed = True
         logger.info("Answering machine detected for %s", self.info.name)
         await db.save_interview_result(
             {
@@ -323,7 +378,16 @@ If you reach voicemail or an answering machine, call detected_answering_machine 
             f"{self.info.name} — voicemail",
             "info",
         )
-
+        await email_service.send_missed_call_email(
+            name=self.info.name,
+            email=self.info.email,
+            job_role=self.info.job_role,
+            company=self.info.company,
+            location=self.info.location,
+            experience_level=self.info.experience_level,
+            required_skills=self.info.required_skills,
+            description=self.info.description,
+        )
         job_ctx = get_job_context()
         await _dispatch_next(job_ctx, self.info.requirement_id, self.info.job_role)
         await self._hangup()
@@ -387,10 +451,17 @@ async def entrypoint(ctx: JobContext) -> None:
             )
         )
 
-        await session_task
+        # Participant answered — set up disconnect handler before session runs
         participant = await ctx.wait_for_participant(identity=phone_number)
-        logger.info("Participant joined: %s", participant.identity)
         agent.set_participant(participant)
+        logger.info("Participant joined: %s", participant.identity)
+
+        @ctx.room.on("participant_disconnected")
+        def on_participant_disconnected(p: rtc.RemoteParticipant) -> None:
+            if p.identity == phone_number:
+                _ = asyncio.create_task(_handle_early_disconnect(agent, ctx))  # noqa: RUF006
+
+        await session_task
 
     except api.TwirpError as e:
         logger.error(
@@ -422,7 +493,16 @@ async def entrypoint(ctx: JobContext) -> None:
             f"{dial_info.get('name', 'Candidate')} — call failed (SIP {e.metadata.get('sip_status_code')})",
             "error",
         )
-
+        await email_service.send_missed_call_email(
+            name=dial_info.get("name", ""),
+            email=dial_info.get("email", ""),
+            job_role=dial_info.get("job_role", ""),
+            company=dial_info.get("company", ""),
+            location=dial_info.get("location", ""),
+            experience_level=dial_info.get("experience_level", ""),
+            required_skills=dial_info.get("required_skills", ""),
+            description=dial_info.get("description", ""),
+        )
         await background_audio.aclose()
         await _dispatch_next(ctx, requirement_id, dial_info.get("job_role", ""))
         ctx.shutdown()

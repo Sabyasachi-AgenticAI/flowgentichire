@@ -126,6 +126,12 @@ function CallStateBadge({ rc, queuePos }: { rc: MatchedCandidate; queuePos?: num
         Failed
       </span>
     );
+  if (rc.call_status === "incomplete")
+    return (
+      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border border-orange-200 text-orange-600 bg-orange-50">
+        Dropped
+      </span>
+    );
   if (rc.call_status === "queued" && queuePos !== undefined)
     return (
       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border border-indigo-200 text-indigo-600 bg-indigo-50">
@@ -349,7 +355,7 @@ export default function ScoutLiveView({
 
   const total = candidates.length;
   const called = candidates.filter((c) =>
-    c.call_status === "calling" || c.call_status === "completed" || c.call_status === "voicemail" || c.call_status === "call_failed"
+    ["calling", "completed", "voicemail", "call_failed", "incomplete"].includes(c.call_status)
   ).length;
   const shortlisted = candidates.filter((c) => {
     if (c.call_status !== "completed") return false;
@@ -585,7 +591,7 @@ export default function ScoutLiveView({
 
                 const isLoading = actionLoading.has(rc.id);
                 const isOnHold = rc.call_status === "on_hold";
-                const canRetry = rc.call_status === "voicemail" || rc.call_status === "call_failed";
+                const canRetry = rc.call_status === "voicemail" || rc.call_status === "call_failed" || rc.call_status === "incomplete";
                 const canHold = rc.call_status === "queued";
                 const isCalling = rc.call_status === "calling";
 
