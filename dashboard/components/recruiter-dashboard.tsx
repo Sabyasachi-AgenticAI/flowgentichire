@@ -633,51 +633,82 @@ export function RecruiterDashboard() {
         <div>
           {/* ── Needs your attention ── */}
           {(() => {
-            const attentionItems: { icon: string; text: string; reqId?: string; jobId?: string }[] = [];
-            reqs.forEach((req) => {
-              const rcs = req.requirement_candidates ?? [];
-              const slCount = rcs.filter((rc) =>
-                bestSummary(rc)?.assessment?.toLowerCase().startsWith("shortlist")
-              ).length;
-              if (slCount > 0 && req.status !== "executing") {
-                attentionItems.push({
-                  icon: "check",
-                  text: `${slCount} candidate${slCount > 1 ? "s" : ""} ready for review`,
-                  reqId: req.id,
-                  jobId: req.job_id ?? undefined,
-                });
+            type AItem = {
+              kind: "voicemail" | "failed" | "dropped" | "hold" | "shortlisted";
+              name: string;
+              label: string;
+              detail?: string;
+              reqId: string;
+              jobId: string;
+            };
+            const todayRcs = reqs
+              .filter((r) => r.created_at.startsWith(todayStr))
+              .flatMap((req) =>
+                (req.requirement_candidates ?? []).map((rc) => ({ rc, req }))
+              );
+            const items: AItem[] = [];
+            todayRcs.forEach(({ rc, req }) => {
+              const name = rc.candidates?.name ?? "Unknown";
+              const jobId = req.job_id ?? req.id;
+              const reqId = req.id;
+              const bs = bestSummary(rc);
+              if (rc.call_status === "voicemail") {
+                items.push({ kind: "voicemail", name, label: "Didn't pick up — schedule a retry", reqId, jobId });
+              } else if (rc.call_status === "call_failed") {
+                items.push({ kind: "failed", name, label: "Call failed — verify number", reqId, jobId });
+              } else if (rc.call_status === "incomplete") {
+                items.push({ kind: "dropped", name, label: "Call dropped mid-interview — follow up", reqId, jobId });
+              } else if (bs?.assessment?.toLowerCase().startsWith("hold")) {
+                const reason = bs.assessment.replace(/^hold:\s*/i, "").trim();
+                items.push({ kind: "hold", name, label: "On hold — follow up needed", detail: reason, reqId, jobId });
+              } else if (bs?.assessment?.toLowerCase().startsWith("shortlist")) {
+                items.push({ kind: "shortlisted", name, label: "Shortlisted — ready for review", reqId, jobId });
               }
             });
-            if (attentionItems.length === 0) return null;
+            if (items.length === 0) return null;
+            const iconFor = (kind: AItem["kind"]) => {
+              if (kind === "voicemail" || kind === "failed")
+                return <svg className="w-4 h-4 text-amber-500 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>;
+              if (kind === "dropped")
+                return <svg className="w-4 h-4 text-red-400 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>;
+              if (kind === "hold")
+                return <svg className="w-4 h-4 text-blue-400 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>;
+              return <svg className="w-4 h-4 text-emerald-500 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>;
+            };
+            const hasShortlisted = items.some((i) => i.kind === "shortlisted");
             return (
               <div className="bg-white border border-slate-200 rounded-xl p-5 mb-6">
                 <h3 className="text-sm font-bold text-slate-800 mb-3">Needs your attention</h3>
-                <ul className="space-y-2.5 mb-4">
-                  {attentionItems.map((item, i) => (
-                    <li key={i} className="flex items-center gap-3 text-sm text-slate-600">
-                      {item.icon === "check" ? (
-                        <svg className="w-4 h-4 text-indigo-500 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                      ) : (
-                        <svg className="w-4 h-4 text-amber-500 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
-                      )}
-                      <span>{item.text}</span>
-                      {item.jobId && (
-                        <Link href={`/requirements/${item.reqId}`}>
-                          <span className="ml-1 bg-indigo-50 text-indigo-600 text-[11px] font-mono font-semibold px-2 py-0.5 rounded hover:bg-indigo-100 transition-colors">
-                            {item.jobId}
-                          </span>
-                        </Link>
-                      )}
+                <ul className="divide-y divide-slate-50">
+                  {items.slice(0, 10).map((item, i) => (
+                    <li key={i} className="flex items-start gap-3 py-2.5 text-sm">
+                      <span className="mt-0.5">{iconFor(item.kind)}</span>
+                      <div className="flex-1 min-w-0">
+                        <span className="font-medium text-slate-800">{item.name}</span>
+                        <span className="text-slate-500"> — {item.label}</span>
+                        {item.detail && (
+                          <p className="text-xs text-slate-400 mt-0.5 truncate">{item.detail}</p>
+                        )}
+                      </div>
+                      <Link href={`/requirements/${item.reqId}`}>
+                        <span className="shrink-0 bg-indigo-50 text-indigo-600 text-[11px] font-mono font-semibold px-2 py-0.5 rounded hover:bg-indigo-100 transition-colors">
+                          {item.jobId}
+                        </span>
+                      </Link>
                     </li>
                   ))}
                 </ul>
-                <Link
-                  href="#"
-                  onClick={(e) => { e.preventDefault(); setSubTab("shortlists"); }}
-                  className="block w-full text-center bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors"
-                >
-                  Review now →
-                </Link>
+                {items.length > 10 && (
+                  <p className="text-xs text-slate-400 mt-2 text-center">+{items.length - 10} more items</p>
+                )}
+                {hasShortlisted && (
+                  <button
+                    onClick={() => setSubTab("shortlists")}
+                    className="mt-4 block w-full text-center bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors"
+                  >
+                    Review shortlists →
+                  </button>
+                )}
               </div>
             );
           })()}
