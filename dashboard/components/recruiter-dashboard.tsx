@@ -31,8 +31,8 @@ type RC = {
     name: string;
     phone: string;
     job_role: string | null;
+    interview_summaries: IS[];
   } | null;
-  interview_summaries: IS[];
 };
 
 type Req = {
@@ -337,11 +337,13 @@ export function RecruiterDashboard() {
         id, job_id, title, location, company, status, created_at,
         requirement_candidates(
           id, call_status, match_score, called_at,
-          candidates(id, name, phone, job_role),
-          interview_summaries(
-            id, confirmed_name, email, current_position, experience_years,
-            skills, notice_period, current_ctc, expected_ctc, assessment,
-            call_status, called_at
+          candidates(
+            id, name, phone, job_role,
+            interview_summaries(
+              id, confirmed_name, email, current_position, experience_years,
+              skills, notice_period, current_ctc, expected_ctc, assessment,
+              call_status, called_at
+            )
           )
         )
       `
@@ -413,7 +415,7 @@ export function RecruiterDashboard() {
 
   // Pick the best summary for a RC — prefer Shortlist > Hold > any completed > first
   const bestSummary = useCallback((rc: RC): IS | undefined => {
-    const summaries = rc.interview_summaries ?? [];
+    const summaries = rc.candidates?.interview_summaries ?? [];
     return (
       summaries.find((s) => s.assessment?.toLowerCase().startsWith("shortlist")) ??
       summaries.find((s) => s.assessment?.toLowerCase().startsWith("hold")) ??
