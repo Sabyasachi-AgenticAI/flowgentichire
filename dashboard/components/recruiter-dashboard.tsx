@@ -413,8 +413,9 @@ export function RecruiterDashboard() {
     []
   );
 
-  // Pick the latest completed summary; only completed calls count
+  // Only consider this RC if it itself completed; then pick the latest completed summary
   const bestSummary = useCallback((rc: RC): IS | undefined => {
+    if (rc.call_status !== "completed") return undefined;
     const completed = (rc.candidates?.interview_summaries ?? [])
       .filter((s) => s.call_status === "completed")
       .sort((a, b) => new Date(b.called_at).getTime() - new Date(a.called_at).getTime());
