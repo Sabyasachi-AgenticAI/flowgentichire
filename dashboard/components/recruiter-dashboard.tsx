@@ -567,10 +567,7 @@ export function RecruiterDashboard() {
               Scout active · {scoutActive} live
             </div>
           ) : (
-            <div className="flex items-center gap-2 bg-slate-100 rounded-lg px-3 py-2 text-sm text-slate-500 font-medium">
-              <span className="w-2 h-2 rounded-full bg-slate-400" />
-              Scout idle
-            </div>
+              null
           )}
           {/* New requisition — opens existing RequirementForm page */}
           <Link
@@ -634,28 +631,86 @@ export function RecruiterDashboard() {
       ══════════════════════════════════════════════════ */}
       {subTab === "reqs" && (
         <div>
-          <div className="flex items-center gap-2 mb-4">
-            <h2 className="text-sm font-semibold text-slate-700">
-              Active requisitions
-            </h2>
-            <span className="bg-slate-100 text-slate-500 text-xs font-bold px-2 py-0.5 rounded-full">
-              {reqs.length}
-            </span>
-          </div>
+          {/* ── Needs your attention ── */}
+          {(() => {
+            const attentionItems: { icon: string; text: string; reqId?: string; jobId?: string }[] = [];
+            reqs.forEach((req) => {
+              const rcs = req.requirement_candidates ?? [];
+              const slCount = rcs.filter((rc) =>
+                bestSummary(rc)?.assessment?.toLowerCase().startsWith("shortlist")
+              ).length;
+              if (slCount > 0 && req.status !== "executing") {
+                attentionItems.push({
+                  icon: "check",
+                  text: `${slCount} candidate${slCount > 1 ? "s" : ""} ready for review`,
+                  reqId: req.id,
+                  jobId: req.job_id ?? undefined,
+                });
+              }
+            });
+            if (attentionItems.length === 0) return null;
+            return (
+              <div className="bg-white border border-slate-200 rounded-xl p-5 mb-6">
+                <h3 className="text-sm font-bold text-slate-800 mb-3">Needs your attention</h3>
+                <ul className="space-y-2.5 mb-4">
+                  {attentionItems.map((item, i) => (
+                    <li key={i} className="flex items-center gap-3 text-sm text-slate-600">
+                      {item.icon === "check" ? (
+                        <svg className="w-4 h-4 text-indigo-500 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                      ) : (
+                        <svg className="w-4 h-4 text-amber-500 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
+                      )}
+                      <span>{item.text}</span>
+                      {item.jobId && (
+                        <Link href={`/requirements/${item.reqId}`}>
+                          <span className="ml-1 bg-indigo-50 text-indigo-600 text-[11px] font-mono font-semibold px-2 py-0.5 rounded hover:bg-indigo-100 transition-colors">
+                            {item.jobId}
+                          </span>
+                        </Link>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                <Link
+                  href="#"
+                  onClick={(e) => { e.preventDefault(); setSubTab("shortlists"); }}
+                  className="block w-full text-center bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors"
+                >
+                  Review now →
+                </Link>
+              </div>
+            );
+          })()}
 
-          {reqs.length === 0 ? (
-            <div className="text-center py-16 text-slate-400">
-              <p className="text-sm mb-2">No requisitions yet.</p>
-              <Link
-                href="/requirements/new"
-                className="text-sm text-indigo-600 hover:underline font-medium"
-              >
-                Create your first requisition →
-              </Link>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {reqs.map((req) => {
+          {/* ── Today's requisitions ── */}
+          {(() => {
+            const todayReqs = reqs.filter((r) => r.created_at.startsWith(todayStr));
+            const label = new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short" });
+            return (
+              <>
+                <div className="flex items-center gap-2 mb-4">
+                  <h2 className="text-sm font-semibold text-slate-700">
+                    Today&apos;s requisitions
+                    <span className="ml-1.5 text-slate-400 font-normal">— {label}</span>
+                  </h2>
+                  <span className="bg-slate-100 text-slate-500 text-xs font-bold px-2 py-0.5 rounded-full">
+                    {todayReqs.length}
+                  </span>
+                </div>
+
+                {todayReqs.length === 0 ? (
+                  <div className="text-center py-16 text-slate-400">
+                    <p className="text-sm mb-2">No requisitions created today.</p>
+                    <Link
+                      href="/requirements/new"
+                      className="text-sm text-indigo-600 hover:underline font-medium"
+                    >
+                      Create one now →
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {todayReqs.map((req) => {
                 const rcs = req.requirement_candidates ?? [];
                 const total = rcs.length;
                 const called = rcs.filter((rc) =>
@@ -749,10 +804,13 @@ export function RecruiterDashboard() {
                       )}
                     </div>
                   </Link>
-                );
-              })}
-            </div>
-          )}
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          );
+        })()}
         </div>
       )}
 
