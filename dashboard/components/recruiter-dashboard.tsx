@@ -413,15 +413,12 @@ export function RecruiterDashboard() {
     []
   );
 
-  // Pick the best summary for a RC — prefer Shortlist > Hold > any completed > first
+  // Pick the latest completed summary; only completed calls count
   const bestSummary = useCallback((rc: RC): IS | undefined => {
-    const summaries = rc.candidates?.interview_summaries ?? [];
-    return (
-      summaries.find((s) => s.assessment?.toLowerCase().startsWith("shortlist")) ??
-      summaries.find((s) => s.assessment?.toLowerCase().startsWith("hold")) ??
-      summaries.find((s) => s.call_status === "completed") ??
-      summaries[0]
-    );
+    const completed = (rc.candidates?.interview_summaries ?? [])
+      .filter((s) => s.call_status === "completed")
+      .sort((a, b) => new Date(b.called_at).getTime() - new Date(a.called_at).getTime());
+    return completed[0];
   }, []);
 
   const stats = useMemo(() => {
