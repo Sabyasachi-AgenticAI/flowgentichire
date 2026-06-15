@@ -324,6 +324,8 @@ export function RecruiterDashboard() {
   const [filterReqId, setFilterReqId] = useState<string>("all");
   const [candidateSearch, setCandidateSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [shortlistSort, setShortlistSort] = useState<"score" | "recent">("score");
+  const [shortlistFilterReqId, setShortlistFilterReqId] = useState<string>("all");
 
   // ── Data fetching ─────────────────────────────────────────────────────────
 
@@ -433,21 +435,31 @@ export function RecruiterDashboard() {
     [allRCs]
   );
 
-  // Shortlist groups — per requirement
-  const shortlistGroups = useMemo(
-    () =>
-      reqs
-        .map((req) => ({
-          req,
-          candidates: (req.requirement_candidates ?? []).filter((rc) =>
-            rc.interview_summaries?.[0]?.assessment
-              ?.toLowerCase()
-              .startsWith("shortlist")
-          ),
-        }))
-        .filter((g) => g.candidates.length > 0),
-    [reqs]
-  );
+  // Shortlist groups — per requirement, with sort + filter
+  const shortlistGroups = useMemo(() => {
+    return reqs
+      .filter((req) =>
+        shortlistFilterReqId === "all" || req.id === shortlistFilterReqId
+      )
+      .map((req) => {
+        let candidates = (req.requirement_candidates ?? []).filter((rc) =>
+          rc.interview_summaries?.[0]?.assessment
+            ?.toLowerCase()
+            .startsWith("shortlist")
+        );
+        if (shortlistSort === "score") {
+          candidates = [...candidates].sort(
+            (a, b) => (b.match_score ?? 0) - (a.match_score ?? 0)
+          );
+        } else {
+          candidates = [...candidates].sort((a, b) =>
+            (b.called_at ?? "").localeCompare(a.called_at ?? "")
+          );
+        }
+        return { req, candidates };
+      })
+      .filter((g) => g.candidates.length > 0);
+  }, [reqs, shortlistSort, shortlistFilterReqId]);
 
   // All candidate rows flattened, for candidates tab
   const allCandidateRows = useMemo(
@@ -890,146 +902,176 @@ export function RecruiterDashboard() {
           TAB 3 — SHORTLISTS
       ══════════════════════════════════════════════════ */}
       {subTab === "shortlists" && (
-        <div className="space-y-8">
+        <div>
+          {/* Filter + sort bar */}
+          <div className="flex flex-wrap items-center gap-3 mb-6">
+            <select
+              value={shortlistFilterReqId}
+              onChange={(e) => setShortlistFilterReqId(e.target.value)}
+              className="bg-white border border-slate-200 rounded-lg py-2 px-3 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-400 min-w-[260px]"
+            >
+              <option value="all">All requisitions</option>
+              {reqs.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.job_id ? `${r.job_id} — ` : ""}
+                  {r.title}
+                  {r.company ? ` · ${r.company}` : ""}
+                </option>
+              ))}
+            </select>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShortlistSort("score")}
+                className={`px-4 py-2 rounded-full text-sm font-medium border transition-colors ${
+                  shortlistSort === "score"
+                    ? "bg-indigo-600 text-white border-indigo-600"
+                    : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
+                }`}
+              >
+                Sort: Score (high→low)
+              </button>
+              <button
+                onClick={() => setShortlistSort("recent")}
+                className={`px-4 py-2 rounded-full text-sm font-medium border transition-colors ${
+                  shortlistSort === "recent"
+                    ? "bg-indigo-600 text-white border-indigo-600"
+                    : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
+                }`}
+              >
+                Sort: Most recent
+              </button>
+            </div>
+          </div>
+
           {shortlistGroups.length === 0 ? (
             <div className="text-center py-16 text-slate-400 text-sm">
               No shortlisted candidates yet. Scout will shortlist candidates
               automatically as calls complete.
             </div>
           ) : (
-            shortlistGroups.map(({ req, candidates }) => (
-              <div key={req.id}>
-                {/* Group header */}
-                <div className="flex items-center flex-wrap gap-2 mb-4">
-                  <h3 className="text-base font-bold text-slate-900">
-                    {req.title}
-                  </h3>
-                  {req.job_id && (
-                    <span className="text-[11px] font-mono bg-indigo-50 border border-indigo-100 text-indigo-500 px-2 py-0.5 rounded font-semibold tracking-wider">
-                      {req.job_id}
+            <div className="space-y-8">
+              {shortlistGroups.map(({ req, candidates }) => (
+                <div key={req.id}>
+                  {/* Group header — matches screenshot layout */}
+                  <div className="flex items-center flex-wrap gap-x-2 gap-y-1 mb-4">
+                    <h3 className="text-lg font-bold text-slate-900">
+                      {req.title}
+                    </h3>
+                    {req.job_id && (
+                      <span className="text-[11px] font-mono bg-indigo-50 border border-indigo-200 text-indigo-600 px-2 py-0.5 rounded font-semibold tracking-wider">
+                        {req.job_id}
+                      </span>
+                    )}
+                    {(req.company || req.location) && (
+                      <span className="text-sm text-slate-400">
+                        ·{req.company ? ` ${req.company}` : ""}
+                        {req.location ? ` · ${req.location}` : ""}
+                      </span>
+                    )}
+                    <span className="ml-auto text-sm font-bold text-emerald-600">
+                      {candidates.length} shortlisted
                     </span>
-                  )}
-                  {req.company && (
-                    <span className="text-xs text-slate-400">
-                      · {req.company}
-                    </span>
-                  )}
-                  {req.location && (
-                    <span className="text-xs text-slate-400">
-                      · {req.location}
-                    </span>
-                  )}
-                  <span className="ml-auto bg-emerald-100 text-emerald-700 text-xs font-bold px-2.5 py-1 rounded-full">
-                    {candidates.length} shortlisted
-                  </span>
-                </div>
+                  </div>
 
-                {/* Cards grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                  {candidates.map((rc) => {
-                    const cand = rc.candidates;
-                    const summary = rc.interview_summaries?.[0];
-                    const name = cand?.name ?? "Unknown";
+                  {/* Cards grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {candidates.map((rc) => {
+                      const cand = rc.candidates;
+                      const summary = rc.interview_summaries?.[0];
+                      const name = cand?.name ?? "Unknown";
+                      const roleLine = [
+                        summary?.current_position ?? cand?.job_role,
+                        summary?.experience_years
+                          ? `${summary.experience_years}yr`
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ");
 
-                    return (
-                      <div
-                        key={rc.id}
-                        className="bg-white border border-slate-200 rounded-xl p-4 hover:shadow-sm hover:border-slate-300 transition-all"
-                      >
-                        {/* Card top */}
-                        <div className="flex items-center gap-2.5 mb-3">
-                          <div
-                            className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${avatarColor(
-                              name
-                            )}`}
-                          >
-                            {initials(name)}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-bold text-slate-900 truncate">
-                              {name}
-                            </p>
-                            <p className="text-xs text-slate-400 truncate">
-                              {summary?.current_position ??
-                                cand?.job_role ??
-                                "—"}
-                            </p>
-                          </div>
-                          {rc.match_score != null && (
-                            <div className="text-center bg-emerald-50 rounded-lg px-2 py-1.5 shrink-0">
-                              <p className="text-base font-extrabold text-emerald-600 leading-none">
-                                {rc.match_score}
+                      return (
+                        <div
+                          key={rc.id}
+                          className="bg-white border border-slate-200 rounded-xl p-4 hover:shadow-md hover:border-slate-300 transition-all"
+                        >
+                          {/* Avatar + name + score */}
+                          <div className="flex items-center gap-3 mb-3">
+                            <div
+                              className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${avatarColor(name)}`}
+                            >
+                              {initials(name)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-bold text-slate-900 truncate">
+                                {name}
                               </p>
-                              <p className="text-[9px] text-emerald-500 font-bold uppercase tracking-wide mt-0.5">
-                                score
-                              </p>
+                              {roleLine && (
+                                <p className="text-xs text-slate-400 truncate mt-0.5">
+                                  {roleLine}
+                                </p>
+                              )}
+                            </div>
+                            {rc.match_score != null && (
+                              <div className="text-center shrink-0">
+                                <p className="text-2xl font-extrabold text-emerald-500 leading-none">
+                                  {rc.match_score}
+                                </p>
+                                <p className="text-[9px] text-emerald-500 font-bold uppercase tracking-widest mt-0.5">
+                                  SCORE
+                                </p>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Notice + CTC */}
+                          {summary && (
+                            <div className="space-y-1.5 mb-4">
+                              {summary.notice_period && (
+                                <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                                    <circle cx="12" cy="12" r="10" />
+                                    <polyline points="12 6 12 12 16 14" />
+                                  </svg>
+                                  Notice: {summary.notice_period}
+                                </div>
+                              )}
+                              {summary.expected_ctc && (
+                                <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                                    <line x1="12" y1="1" x2="12" y2="23" />
+                                    <path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
+                                  </svg>
+                                  Expects {summary.expected_ctc}
+                                </div>
+                              )}
                             </div>
                           )}
-                        </div>
 
-                        {/* Key details */}
-                        {summary && (
-                          <div className="space-y-1.5 mb-3">
-                            {summary.notice_period && (
-                              <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                                <svg
-                                  width="11"
-                                  height="11"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth={2}
-                                >
-                                  <circle cx="12" cy="12" r="10" />
-                                  <polyline points="12 6 12 12 16 14" />
-                                </svg>
-                                Notice: {summary.notice_period}
-                              </div>
-                            )}
-                            {summary.expected_ctc && (
-                              <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                                <svg
-                                  width="11"
-                                  height="11"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth={2}
-                                >
-                                  <line x1="12" y1="1" x2="12" y2="23" />
-                                  <path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
-                                </svg>
-                                Expects {summary.expected_ctc}
-                              </div>
-                            )}
+                          {/* Actions */}
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() =>
+                                summary &&
+                                setSelectedSummary({ is: summary, name })
+                              }
+                              disabled={!summary}
+                              className="flex-1 py-2 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            >
+                              View transcript
+                            </button>
+                            <button
+                              className="flex-1 py-2 text-xs font-semibold rounded-lg border border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 transition-colors"
+                              title="Coming soon"
+                            >
+                              Send to client
+                            </button>
                           </div>
-                        )}
-
-                        {/* Actions */}
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() =>
-                              summary &&
-                              setSelectedSummary({ is: summary, name })
-                            }
-                            disabled={!summary}
-                            className="flex-1 text-xs font-semibold py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                          >
-                            View summary
-                          </button>
-                          <button
-                            className="flex-1 text-xs font-semibold py-1.5 rounded-lg border border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700 transition-colors"
-                            title="Coming soon"
-                          >
-                            Send to client
-                          </button>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))
+              ))}
+            </div>
           )}
         </div>
       )}
