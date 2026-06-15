@@ -347,7 +347,7 @@ export function RecruiterDashboard() {
       `
       )
       .order("created_at", { ascending: false })
-      .limit(30);
+      .limit(100);
     if (data) setReqs(data as unknown as Req[]);
     setLoading(false);
   }, []);
@@ -411,16 +411,27 @@ export function RecruiterDashboard() {
     []
   );
 
+  // Pick the best summary for a RC — prefer Shortlist > Hold > any completed > first
+  const bestSummary = useCallback((rc: RC): IS | undefined => {
+    const summaries = rc.interview_summaries ?? [];
+    return (
+      summaries.find((s) => s.assessment?.toLowerCase().startsWith("shortlist")) ??
+      summaries.find((s) => s.assessment?.toLowerCase().startsWith("hold")) ??
+      summaries.find((s) => s.call_status === "completed") ??
+      summaries[0]
+    );
+  }, []);
+
   const stats = useMemo(() => {
     const callsToday = allRCs.filter((rc) =>
       rc.called_at?.startsWith(todayStr)
     ).length;
     const interested = allRCs.filter((rc) => {
-      const a = rc.interview_summaries?.[0]?.assessment?.toLowerCase() ?? "";
+      const a = bestSummary(rc)?.assessment?.toLowerCase() ?? "";
       return a.startsWith("shortlist") || a.startsWith("hold");
     }).length;
     const shortlisted = allRCs.filter((rc) =>
-      rc.interview_summaries?.[0]?.assessment?.toLowerCase().startsWith("shortlist")
+      bestSummary(rc)?.assessment?.toLowerCase().startsWith("shortlist")
     ).length;
     const awaitingReview = reqs.filter(
       (r) =>
@@ -428,7 +439,7 @@ export function RecruiterDashboard() {
         (r.requirement_candidates?.length ?? 0) > 0
     ).length;
     return { callsToday, interested, shortlisted, awaitingReview };
-  }, [allRCs, reqs, todayStr]);
+  }, [allRCs, reqs, todayStr, bestSummary]);
 
   const scoutActive = useMemo(
     () => allRCs.filter((rc) => rc.call_status === "calling").length,
@@ -443,9 +454,7 @@ export function RecruiterDashboard() {
       )
       .map((req) => {
         let candidates = (req.requirement_candidates ?? []).filter((rc) =>
-          rc.interview_summaries?.[0]?.assessment
-            ?.toLowerCase()
-            .startsWith("shortlist")
+          bestSummary(rc)?.assessment?.toLowerCase().startsWith("shortlist")
         );
         if (shortlistSort === "score") {
           candidates = [...candidates].sort(
@@ -658,9 +667,7 @@ export function RecruiterDashboard() {
                   (rc) => rc.call_status === "queued"
                 ).length;
                 const sl = rcs.filter((rc) =>
-                  rc.interview_summaries?.[0]?.assessment
-                    ?.toLowerCase()
-                    .startsWith("shortlist")
+                  bestSummary(rc)?.assessment?.toLowerCase().startsWith("shortlist")
                 ).length;
                 const progress =
                   total > 0 ? Math.round((called / total) * 100) : 0;
@@ -810,7 +817,7 @@ export function RecruiterDashboard() {
             ) : (
               filteredCandidates.map(({ rc, req }) => {
                 const cand = rc.candidates;
-                const summary = rc.interview_summaries?.[0];
+                const summary = bestSummary(rc);
                 const atag = assessmentTag(summary?.assessment);
                 const { cls: scls, label: slabel } = callStatusPill(
                   rc.call_status
@@ -977,7 +984,7 @@ export function RecruiterDashboard() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {candidates.map((rc) => {
                       const cand = rc.candidates;
-                      const summary = rc.interview_summaries?.[0];
+                      const summary = bestSummary(rc);
                       const name = cand?.name ?? "Unknown";
                       const roleLine = [
                         summary?.current_position ?? cand?.job_role,
