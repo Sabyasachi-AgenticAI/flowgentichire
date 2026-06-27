@@ -22,10 +22,10 @@ from livekit.agents import (
     cli,
     function_tool,
     get_job_context,
-    inference,
     room_io,
 )
-from livekit.plugins import ai_coustics, silero
+from livekit.plugins import ai_coustics, cartesia, deepgram, silero
+from livekit.plugins import openai as lk_openai
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 import db
@@ -403,10 +403,10 @@ async def entrypoint(ctx: JobContext) -> None:
     agent = HireAgent(dial_info=dial_info)
 
     session = AgentSession(
-        stt=inference.STT(model="deepgram/nova-3", language="en"),
-        llm=inference.LLM(model="openai/gpt-4.1"),
-        tts=inference.TTS(
-            model="cartesia/sonic-3",
+        stt=deepgram.STT(model="nova-3", language="en"),
+        llm=lk_openai.LLM(model="gpt-4.1"),
+        tts=cartesia.TTS(
+            model="sonic-3",
             voice="9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",  # Jacqueline - confident young American female
         ),
         turn_detection=MultilingualModel(),
